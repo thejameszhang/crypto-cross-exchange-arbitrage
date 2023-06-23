@@ -142,9 +142,9 @@ def merge_postprocess_exchange_data(
 
 def get_symbols(multindex_df: pd.MultiIndex) -> List[str]:
     """
-    Extract all the unique currency pairs from multiindex exchange dataframe
+    Extract all the unique currency pairs from multiindex exchange dataframe.
 
-    :param multiindex_df: multiindex dataframe 
+    :param multiindex_df: multiindex dataframe
     :return: list of symbols
     """
     symbols = multindex_df["close"].columns
@@ -162,4 +162,28 @@ def get_symbol_info(multiindex_df: pd.MultiIndex, symbol: str) -> pd.MultiIndex:
     """
     columns_list = multiindex_df.columns
     columns = [column for column in columns_list if symbol in column[1]]
+    return multiindex_df[columns]
+
+def get_exchanges(multindex_df: pd.MultiIndex) -> List[str]:
+    """
+    Extract all the exchanges from multiindex exchange dataframe.
+
+    :param multiindex_df: multiindex dataframe 
+    :return: list of exchanges
+    """
+    exchanges = multindex_df["close"].columns
+    exchanges = [exchange.split("::")[0] for exchange in exchanges]
+    exchanges = sorted(list(exchanges))
+    return exchanges
+
+def get_symbol_info(multiindex_df: pd.MultiIndex, exchange: str) -> pd.MultiIndex:
+    """
+    Returns a two-level dataframe with only the given exchange.
+
+    :param multiindex_df: multiindex dataframe
+    :param exchange: exchange
+    :return: all data associated with the exchange
+    """
+    columns_list = multiindex_df.columns
+    columns = [column for column in columns_list if exchange in column[1]]
     return multiindex_df[columns]
