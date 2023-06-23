@@ -8,7 +8,7 @@ import pyarrow.parquet as pq
 
 def postprocess_exchange_data(
     exchange_df: pd.DataFrame, 
-    keep_single: Optional[bool] = False,
+    keep_single: Optional[bool] = False
 ) -> pd.DataFrame:
     """
     Rearrange the exchange dataframe such that the index is time
@@ -34,21 +34,21 @@ def postprocess_exchange_data(
     exchange_df = exchange_df.drop(columns=cols_to_drop)
     # Group the dataframe by currency pair.
     currency_pair_dfs = [group for _, group in exchange_df.groupby("currency_pair")]
-    # Calls calculate_vwap helper function that also renames OHLCV columns.
-    currency_pair_dfs = calculate_vwap(currency_pair_dfs, exchange_id) 
+    # Calls helper function that also renames OHLCV columns.
+    currency_pair_dfs = calculate_vwap(currency_pair_dfs, exchange_id)
     # Initialize the dataframe that we will return, which starts as just time.
     res_df = pd.DataFrame(exchange_df["timestamp"].unique())
     res_df = res_df.rename(columns={0:"timestamp"})
+    res_df = res_df.sort_values(by="timestamp")
     # Merge all currency pair dataframes into the return dataframe. 
     for currency_pair in currency_pair_dfs:
-        res_df = pd.merge_asof(res_df, currency_pair, on="timestamp")
+        res_df = pd.merge_asof(res_df, currency_pair.sort_values(by="timestamp"), on="timestamp")
     # Set index as timestamp which was lost during merging.
     res_df = res_df.set_index("timestamp")
     # Sort by column name to the order is consistent.
     res_df = res_df.sort_index(axis=1)
-    # Drop duplicate columns if there are any. 
-    columns = sorted(list(set(res_df.columns)))
-    res_df = res_df[columns]
+    # Drop duplicate columns if there are any.
+    res_df = res_df.loc[:,~res_df.columns.duplicated()].copy()
     # After postprocessing, create column names to convert this to multiindex.
     if keep_single:
         return res_df
@@ -97,22 +97,24 @@ def convert_to_multiindex(single_df: pd.DataFrame) -> pd.DataFrame:
     :param single_df: dataframe returned by convert_to_multi_index
     :return: a multiindex dataframe
     """
+    
     # Store the timestamp for later use.
     timestamp = single_df.index
     # Create a list of all column names.
     columns = single_df.columns
     # Create the outer feature level.
-    feature_levels = [column.split()[0] for column in columns]
+    feature_levels = [column.split("-")[0] for column in columns]
     # Create the inner currency pair levels.
-    currency_pair_levels = [column.split()[-1] for column in columns]
+    currency_pair_levels = [column.split("-")[-1] for column in columns]
     res_df = pd.DataFrame(single_df.values, columns=[feature_levels, currency_pair_levels])
     # Convert the given dataframe to multiindex.
-    res_df = pd.DataFrame(np.array(single_df), columns=[feature_levels.split(), currency_pair_levels.split()])
+    feature_string = " ".join([str(feature) for feature in feature_levels])
+    currency_pair_string = " ".join([str(pair) for pair in currency_pair_levels])
+    res_df = pd.DataFrame(np.array(single_df), columns=[feature_string.split(), currency_pair_string.split()])
     # Restore the initial timestamp.
     res_df.index = timestamp
     # Drop duplicate columns if there are any.
-    columns = sorted(list(set(res_df.columns)))
-    res_df = res_df[columns]
+    res_df = res_df.loc[:,~res_df.columns.duplicated()].copy()
     return res_df
 
 def merge_postprocess_exchange_data(
@@ -126,15 +128,14 @@ def merge_postprocess_exchange_data(
     :return: multiindex dataframe
     """
     # Postprocess each dataframe.
-    converted_dfs = [convert_to_multiindex(df, keep_single=True) for df in exchange_dfs]
+    converted_dfs = [postprocess_exchange_data(df, True) for df in exchange_dfs]
     # Merge dataframes.
     res_df = pd.concat(converted_dfs, axis=1)
-    # Sort by time and columns before passing intoconvert_to_multiindex 
+    # Sort by time and columns before passing into convert_to_multiindex 
     res_df = res_df.sort_index()
     res_df = res_df.sort_index(axis=1)
     # Drop duplicate columns if there are any.
-    columns = sorted(list(set(res_df.columns)))
-    res_df = res_df[columns]
+    res_df = res_df.loc[:,~res_df.columns.duplicated()].copy()
     # Now convert this merged dataframe to multiiindex.
     res_df = convert_to_multiindex(res_df)
     return res_df
@@ -147,7 +148,7 @@ def get_symbols(multindex_df: pd.MultiIndex) -> List[str]:
     :return: list of symbols
     """
     symbols = multindex_df["close"].columns
-    symbols = {symbol.split("::")[-1] for symbol in symbols}
+    symbols = [symbol.split("::")[-1] for symbol in symbols]
     symbols = sorted(list(symbols))
     return symbols
 
