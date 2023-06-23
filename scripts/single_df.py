@@ -149,7 +149,7 @@ def get_symbols(multindex_df: pd.MultiIndex) -> List[str]:
     """
     symbols = multindex_df["close"].columns
     symbols = [symbol.split("::")[-1] for symbol in symbols]
-    symbols = sorted(list(symbols))
+    symbols = sorted(list(set(symbols)))
     return symbols
 
 def get_symbol_info(multiindex_df: pd.MultiIndex, symbol: str) -> pd.MultiIndex:
@@ -173,10 +173,10 @@ def get_exchanges(multindex_df: pd.MultiIndex) -> List[str]:
     """
     exchanges = multindex_df["close"].columns
     exchanges = [exchange.split("::")[0] for exchange in exchanges]
-    exchanges = sorted(list(exchanges))
+    exchanges = sorted(list(set(exchanges)))
     return exchanges
 
-def get_symbol_info(multiindex_df: pd.MultiIndex, exchange: str) -> pd.MultiIndex:
+def get_exchange_info(multiindex_df: pd.MultiIndex, exchange: str) -> pd.MultiIndex:
     """
     Returns a two-level dataframe with only the given exchange.
 
