@@ -6,6 +6,15 @@ from typing import List, Optional
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+features = ['close', 'high', 'low', 'open', 'volume', 'vwap']
+exchanges = ['binance_futures', 'binance_spot', 'binanceus', 'okx']
+currency_pairs = ['APE_USDT', 'AVAX_USDT', 'AXS_USDT', 'BAKE_USDT', 'BNB_USDT',
+       'BTC_BUSD', 'BTC_USDT', 'CRV_USDT', 'CTK_USDT', 'DOGE_USDT', 'DOT_USDT',
+       'DYDX_USDT', 'ETH_BUSD', 'ETH_USDT', 'FTM_USDT', 'GMT_USDT',
+       'LINK_USDT', 'MATIC_USDT', 'NEAR_USDT', 'OGN_USDT', 'RUNE_USDT',
+       'SAND_USDT', 'SOL_USDT', 'STORJ_USDT', 'UNFI_USDT', 'WAVES_USDT',
+       'XRP_USDT']
+
 def postprocess_exchange_data(
     exchange_df: pd.DataFrame, 
     keep_single: Optional[bool] = False
@@ -49,10 +58,10 @@ def postprocess_exchange_data(
     res_df = res_df.sort_index(axis=1)
     # Drop duplicate columns if there are any.
     res_df = res_df.loc[:,~res_df.columns.duplicated()].copy()
-    # After postprocessing, create column names to convert this to multiindex.
+    # After postprocessing, create column names to convert this to multindex.
     if keep_single:
         return res_df
-    res_df = convert_to_multiindex(res_df)
+    res_df = convert_to_multindex(res_df)
 
     return res_df
 
@@ -90,13 +99,13 @@ def calculate_vwap(
         df.set_index("timestamp", inplace=True)
     return currency_pair_dfs
 
-def convert_to_multiindex(single_df: pd.DataFrame) -> pd.DataFrame:
+def convert_to_multindex(single_df: pd.DataFrame) -> pd.DataFrame:
     """
     Create all of the column levels such that we can transform 
     the single_index_df into multi_index.
     
     :param single_df: dataframe returned by convert_to_multi_index
-    :return: a multiindex dataframe
+    :return: a multindex dataframe
     """
     
     # Store the timestamp for later use.
@@ -111,7 +120,7 @@ def convert_to_multiindex(single_df: pd.DataFrame) -> pd.DataFrame:
     exchange_levels = [column.split("::")[0] for column in temp]
     # Create the currency pair level.
     currency_pair_levels = [column.split("::")[-1] for column in temp]
-    # Convert the given dataframe to multiindex.
+    # Convert the given dataframe to multindex.
     feature_string = " ".join([str(feature) for feature in feature_levels])
     exchange_string = " ".join([str(exchange)for exchange in exchange_levels])
     currency_pair_string = " ".join([str(pair) for pair in currency_pair_levels])
@@ -127,66 +136,80 @@ def merge_postprocess_exchange_data(
 ) -> List[pd.DataFrame]:
     """
     Converts a list of exchange dataframes into one large
-    multiindex dataframe.
+    multindex dataframe.
 
     :param exchange_dfs: list of exchange dataframes
-    :return: multiindex dataframe
+    :return: multindex dataframe
     """
     # Postprocess each dataframe.
     converted_dfs = [postprocess_exchange_data(df, True) for df in exchange_dfs]
     # Merge dataframes.
     res_df = pd.concat(converted_dfs, axis=1)
-    # Sort by time and columns before passing into convert_to_multiindex 
+    # Sort by time and columns before passing into convert_to_multindex 
     res_df = res_df.sort_index()
     res_df = res_df.sort_index(axis=1)
     # Now convert this merged dataframe to multiiindex.
-    res_df = convert_to_multiindex(res_df)
+    res_df = convert_to_multindex(res_df)
     return res_df
 
-def get_symbols(multindex_df: pd.MultiIndex) -> List[str]:
-    """
-    Extract all the unique currency pairs from multiindex exchange dataframe.
 
-    :param multiindex_df: multiindex dataframe
+def get_coins(multindex_df: pd.MultiIndex) -> List[str]:
+    """
+    Extract all the unique currency pairs from multindex exchange dataframe.
+
+    :param multindex_df: multindex dataframe
     :return: list of symbols
     """
-    symbols = multindex_df["close"].columns
-    symbols = [symbol.split("::")[-1] for symbol in symbols]
-    symbols = sorted(list(set(symbols)))
-    return symbols
+    for level in multindex_df.columns.levels:
+        if level[0] in currency_pairs:
+            return level
 
-def get_symbol_info(multiindex_df: pd.MultiIndex, symbol: str) -> pd.MultiIndex:
+def get_ncoins(multindex_df: pd.MultiIndex) -> int:
+    """
+    Returns the number of unique currency pairs in the dataframe.
+
+    :param multindex_df: a multindex dataframe
+    :returns: number of symbols
+    """
+    return len(get_coins(multindex_df))
+
+def get_coins_info(multindex_df: pd.MultiIndex, symbol: str) -> pd.MultiIndex:
     """
     Returns a two-level dataframe with only the given symbol.
 
-    :param multiindex_df: multiindex dataframe
+    :param multindex_df: multindex dataframe
     :param symbol: symbol
     :return: all data associated with the symbol
     """
-    columns_list = multiindex_df.columns
-    columns = [column for column in columns_list if symbol in column[1]]
-    return multiindex_df[columns]
+    pass
 
 def get_exchanges(multindex_df: pd.MultiIndex) -> List[str]:
     """
-    Extract all the exchanges from multiindex exchange dataframe.
+    Extract all the exchanges from multindex exchange dataframe.
 
-    :param multiindex_df: multiindex dataframe 
+    :param multindex_df: multindex dataframe 
     :return: list of exchanges
     """
-    exchanges = multindex_df["close"].columns
-    exchanges = [exchange.split("::")[0] for exchange in exchanges]
-    exchanges = sorted(list(set(exchanges)))
-    return exchanges
+    pass
 
-def get_exchange_info(multiindex_df: pd.MultiIndex, exchange: str) -> pd.MultiIndex:
+def get_nexchanges():
+    pass
+
+def get_exchange_info(multindex_df: pd.MultiIndex, exchange: str) -> pd.MultiIndex:
     """
     Returns a two-level dataframe with only the given exchange.
 
-    :param multiindex_df: multiindex dataframe
+    :param multindex_df: multindex dataframe
     :param exchange: exchange
     :return: all data associated with the exchange
     """
-    columns_list = multiindex_df.columns
-    columns = [column for column in columns_list if exchange in column[1]]
-    return multiindex_df[columns]
+    pass
+
+def get_features():
+    pass
+
+def get_nfeatures():
+    pass
+
+def get_feature_info():
+    pass
