@@ -6,6 +6,8 @@ from typing import List, Optional
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+### MAINTAIN LISTS OF ALL FEATUERS, EXCHANGES, CURRENCY PAIRS ###
+
 features = ['close', 'high', 'low', 'open', 'volume', 'vwap']
 exchanges = ['binance_futures', 'binance_spot', 'binanceus', 'okx']
 currency_pairs = ['APE_USDT', 'AVAX_USDT', 'AXS_USDT', 'BAKE_USDT', 'BNB_USDT',
@@ -78,6 +80,7 @@ def calculate_vwap(
     :param exchange_id: exchange id
     :return: list of dataframes with a vwap column
     """
+
     for df in currency_pair_dfs:
         # Get name of currency_pair for renaming purposes.
         currency_pair = df["currency_pair"].unique()[0]
@@ -160,30 +163,65 @@ def get_coins(multindex_df: pd.MultiIndex) -> List[str]:
     Extract all the unique currency pairs from multindex exchange dataframe.
 
     :param multindex_df: multindex dataframe
-    :return: list of symbols
+    :return: list of coins 
     """
     for level in multindex_df.columns.levels:
         if level[0] in currency_pairs:
-            return level
+            return list(level)
+    raise Exception("Coins level not found.")
 
 def get_ncoins(multindex_df: pd.MultiIndex) -> int:
     """
     Returns the number of unique currency pairs in the dataframe.
 
     :param multindex_df: a multindex dataframe
-    :returns: number of symbols
+    :returns: number of coins
     """
     return len(get_coins(multindex_df))
 
-def get_coins_info(multindex_df: pd.MultiIndex, symbol: str) -> pd.MultiIndex:
+def find_type(multindex_df: pd.MultiIndex, desired: str) -> int:
     """
-    Returns a two-level dataframe with only the given symbol.
+    Helper function that finds what level the desired type is located.
+
+    :param multindex_df: a multindex dataframe
+    :param desired: "feature", "exchange", or "coin"
+    :return: where the feature, exchange, or coin level currently is
+    """
+    # Assert that we have are given a multindex dataframe.
+    assert len(multindex_df.columns.levels) > 1
+    # Find what the user is looking for.
+    if desired == "feature":
+        desired_list = features 
+    elif desired == "exchange":
+        desired_list = exchanges
+    else:
+        desired_list = currency_pairs
+    # Loop through the column levels.
+    for i, level in enumerate(multindex_df.columns.levels):
+        if level[0] in desired_list:
+            return i
+    raise Exception("Type not found in the dataframe.")
+
+def get_coins_info(multindex_df: pd.MultiIndex, coin: str) -> pd.MultiIndex:
+    """
+    Returns a two-level dataframe with only the given coin.
 
     :param multindex_df: multindex dataframe
-    :param symbol: symbol
-    :return: all data associated with the symbol
+    :param coin: coin
+    :return: all data associated with the coin
     """
-    pass
+
+    # Assert we have three levels in our dataframe.
+    assert len(multindex_df.columns.levels) == 3
+    # Now find where the desired type currently is
+    level = find_type(multindex_df, "coin")
+    # If the type is located at level 0, we can just use dataframe indexing.
+    if level == 0:
+        return multindex_df[coin]
+    # Else move level to the 0th level such that we can use indexing.
+    else:
+        multindex_df = multindex_df.swaplevel(0, level, 1)
+    return multindex_df[coin]
 
 def get_exchanges(multindex_df: pd.MultiIndex) -> List[str]:
     """
@@ -192,28 +230,85 @@ def get_exchanges(multindex_df: pd.MultiIndex) -> List[str]:
     :param multindex_df: multindex dataframe 
     :return: list of exchanges
     """
-    pass
 
-def get_nexchanges():
-    pass
+    for level in multindex_df.columns.levels:
+        if level[0] in exchanges:
+            return list(level)
+    raise Exception("Exchanges level not found.")
+
+def get_nexchanges(multindex_df: pd.MultiIndex) -> int:
+    """
+    Returns the number of unique exchanges in the dataframe.
+
+    :param multindex_df: a multindex dataframe
+    :returns: number of exchanges
+    """
+    return len(get_exchanges(multindex_df))
+    
 
 def get_exchange_info(multindex_df: pd.MultiIndex, exchange: str) -> pd.MultiIndex:
     """
     Returns a two-level dataframe with only the given exchange.
 
     :param multindex_df: multindex dataframe
-    :param exchange: exchange
+    :param exchange: the desired exchange
     :return: all data associated with the exchange
     """
-    pass
 
-def get_features():
-    pass
+    # Assert we have three levels in our dataframe.
+    assert len(multindex_df.columns.levels) == 3
+    # Now find where the desired type currently is
+    level = find_type(multindex_df, "exchange")
+    # If the type is located at level 0, we can just use dataframe indexing.
+    if level == 0:
+        return multindex_df[exchange]
+    # Else move level to the 0th level such that we can use indexing.
+    else:
+        multindex_df = multindex_df.swaplevel(0, level, 1)
+    return multindex_df[exchange]
 
-def get_nfeatures():
-    pass
+def get_features(multindex_df: pd.MultiIndex) -> List[str]:
+    """
+    Extract all the features from the multindex dataframe.
 
-def get_feature_info():
+    :param multindex_df: multindex dataframe 
+    :return: list of features
+    """
+
+    for level in multindex_df.columns.levels:
+        if level[0] in features:
+            return list(level)
+    raise Exception("Features level not found.")
+
+def get_nfeatures(multindex_df: pd.MultiIndex) -> int:
+    """
+    Returns the number of unique features in the dataframe.
+
+    :param multindex_df: a multindex dataframe
+    :returns: number of features
+    """
+    return len(get_features(multindex_df))
+
+def get_feature_info(multindex_df: pd.MultiIndex, feature: str) -> pd.MultiIndex:
+    """
+    Returns a two-level dataframe with only the given feature.
+
+    :param multindex_df: multindex dataframe
+    :param feature: the desired feature
+    :return: all data associated with the feature
+    """
+
+    # Assert we have three levels in our dataframe.
+    assert len(multindex_df.columns.levels) == 3
+    # Now find where the desired type currently is
+    level = find_type(multindex_df, "feature")
+    # If the type is located at level 0, we can just use dataframe indexing.
+    if level == 0:
+        return multindex_df[feature]
+    # Else move level to the 0th level such that we can use indexing.
+    else:
+        multindex_df = multindex_df.swaplevel(0, level, 1)
+    return multindex_df[feature]
     pass
 
 ### FUNCTIONS TO HELP PERFORM CROSS EXCHANGE ARBITRAGE ### 
