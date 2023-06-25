@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from functools import reduce
 import datetime
-from typing import List, Optional 
+from typing import List, Optional, Dict
 import pyarrow as pa
 import pyarrow.parquet as pq
 
@@ -221,7 +221,9 @@ def get_coins_info(multindex_df: pd.MultiIndex, coin: str) -> pd.MultiIndex:
     # Else move level to the 0th level such that we can use indexing.
     else:
         multindex_df = multindex_df.swaplevel(0, level, 1)
-    return multindex_df[coin]
+    res_df = multindex_df[coin]
+    res_df = res_df.sort_index(axis=1)
+    return res_df
 
 def get_exchanges(multindex_df: pd.MultiIndex) -> List[str]:
     """
@@ -265,7 +267,9 @@ def get_exchange_info(multindex_df: pd.MultiIndex, exchange: str) -> pd.MultiInd
     # Else move level to the 0th level such that we can use indexing.
     else:
         multindex_df = multindex_df.swaplevel(0, level, 1)
-    return multindex_df[exchange]
+    res_df = multindex_df[exchange]
+    res_df = res_df.sort_index(axis=1)
+    return res_df
 
 def get_features(multindex_df: pd.MultiIndex) -> List[str]:
     """
@@ -308,12 +312,13 @@ def get_feature_info(multindex_df: pd.MultiIndex, feature: str) -> pd.MultiIndex
     # Else move level to the 0th level such that we can use indexing.
     else:
         multindex_df = multindex_df.swaplevel(0, level, 1)
-    return multindex_df[feature]
-    pass
+    res_df = multindex_df[feature]
+    res_df = res_df.sort_index(axis=1)
+    return res_df
 
 ### FUNCTIONS TO HELP PERFORM CROSS EXCHANGE ARBITRAGE ### 
 
-def swaplevels_cross_exchange_arbitrage(multindex_df: pd.MultiIndex) -> pd.MultiIndex:
+def swaplevels(multindex_df: pd.MultiIndex) -> pd.MultiIndex:
     """
     Converts the dataframe to have a the currency pair as the outer level, 
     the feature as the middle level, and the exchange as the inner level.
@@ -321,27 +326,74 @@ def swaplevels_cross_exchange_arbitrage(multindex_df: pd.MultiIndex) -> pd.Multi
     :param multindex_df: a multindex dataframe
     :return: a formatted multindex dataframe
     """
+
     # Assert that the dataframe has 3 columns, or else we cannot proceed.
     assert len(multindex_df.columns.levels) == 3
-    # Save the timestamp for later.
-    timestamp = multindex_df.index
-    # We have to restructure columns, so save the column length.
-    length = len(multindex_df.columns)
-    # Determine which level corresponds to feature, exchange, currency.
-    for level in multindex_df.columns.levels:
-        if level[0] in features:
-            feature_level = sorted(list(level) * int(length / len(level)))
-        elif level[0] in exchanges:
-            exchange_level = sorted(list(level) * int(length / len(level)))
-        else:
-            currency_pair_level = sorted(list(level) * int(length / len(level)))
-    # Now create the strings from the lists.
-    feature_string = " ".join([str(feature) for feature in feature_level])
-    exchange_string = " ".join([str(exchange)for exchange in exchange_level])
-    currency_pair_string = " ".join([str(pair) for pair in currency_pair_level])
-    # Now create the correctly formatted multindex dataframe.
-    res_df = pd.DataFrame(np.array(multindex_df.values), 
-            columns=[currency_pair_string.split(), feature_string.split(), exchange_string.split()])
-    # Restore the initial timestamp and sort.
-    res_df.index = timestamp
+    assert multindex_df.columns.levels[0][0] in features
+    assert multindex_df.columns.levels[1][0] in exchanges
+    assert multindex_df.columns.levels[2][0] in currency_pairs
+    # Our formula only needs volume and vwap.
+    cols_to_drop = ["open", "high", "low", "close"]
+    multindex_df = multindex_df.drop(columns=cols_to_drop)
+    # Now make the appropriate swaps.
+    multindex_df = multindex_df.swaplevel(0, 2, 1)
+    multindex_df = multindex_df.swaplevel(1, 2, 1)
+    multindex_df = multindex_df.sort_index(axis=1)
+    return multindex_df
+
+def arbitrage(multindex_df: pd.MultiIndex) -> pd.DataFrame:
+    """
+    Creates dataframe representing all possible profitable trades for
+    the specified coin given the multindex dataframe.
+
+    :param multindex_df: multindex dataframe with only the given coin.
+    :return coin: a currency pair
+    :return: total profit for this coin
+    """
+    # Index by the given coin.
+    coin_df = multindex_df[coin]
+    # Isolate the timestamp for later use.
+    coin = pd.DataFrame(coin_df.index)
+    coin = coin.set_index('timestamp')
+    # Get a list of the exchanges.
+    exchange_list = list(coin_df['vwap'].columns)
+    # Create minimum and maximum vwap columns.
+    coin['price_i'] = coin_df['vwap'][exchange_list].min(axis=1)
+    coin['price_j'] = coin_df['vwap'][exchange_list].max(axis=1)
+    # Create exchange columns that have the minimum and maximum price.
+    coin['i'] = coin_df['vwap'][exchange_list].idxmin(axis=1)
+    coin['j'] = coin_df['vwap'][exchange_list].idxmax(axis=1)
+    # Create volume columns.
+    for exchange in exchange_list:
+        coin[exchange] = coin_df['volume'][exchange]
+    # Only consider rows where there exists a price dislocation, i != j != NaN.
+    # Save a copy of coin.
+    coin2 = coin.loc[coin['i'] != coin['j']]
+    coin2 = coin2.dropna(subset=['i','j'])
+    # Group by the pairs.
+    dfs = [group for _, group in coin2.groupby(['i', 'j'])]
+    # Compute the min_volume column for each df. 
+    for df in dfs:
+        exchange1, exchange2 = df['i'].unique()[0], df['j'].unique()[0]
+        df['min_volume'] = df[[exchange1, exchange2]].min(axis=1)
+    # Concatenate them, sort by timestamp, and drop unnecessary columns
+    if dfs:
+        res_df = pd.concat(dfs)
+        res_df = res_df.sort_index()
+        res_df = res_df.drop(columns=exchange_list)
+        res_df['instant_profit'] = res_df['min_volume'] * abs(res_df['price_i'] - res_df['price_j'])
+    else:
+        res_df = coin
+        res_df['instant_profit'] = np.zeros(len(coin_df))
     return res_df
+
+def arbitrage_all(multindex_df: pd.MultiIndex) -> Dict[str: pd.DateFrame]:
+    """
+    Computes total arbitrage for all coins in the given multindex dataframe.
+
+    :param multindex_df: a multindex dataframe
+    :return: a dictionary where the key is the coin and the value is the
+    dataframe representing profitable trades
+    """
+    coins_list = multindex_df.columns.levels[0]
+    return {coin: arbitrage(multindex_df, coin) for coin in coins_list}
