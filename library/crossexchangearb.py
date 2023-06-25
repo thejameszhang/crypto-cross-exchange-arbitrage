@@ -341,7 +341,7 @@ def swaplevels(multindex_df: pd.MultiIndex) -> pd.MultiIndex:
     multindex_df = multindex_df.sort_index(axis=1)
     return multindex_df
 
-def arbitrage(multindex_df: pd.MultiIndex) -> pd.DataFrame:
+def arbitrage(multindex_df: pd.MultiIndex, coin: str) -> pd.DataFrame:
     """
     Creates dataframe representing all possible profitable trades for
     the specified coin given the multindex dataframe.
@@ -387,7 +387,7 @@ def arbitrage(multindex_df: pd.MultiIndex) -> pd.DataFrame:
         res_df['instant_profit'] = np.zeros(len(coin_df))
     return res_df
 
-def arbitrage_all(multindex_df: pd.MultiIndex) -> Dict[str: pd.DateFrame]:
+def arbitrage_all(multindex_df: pd.MultiIndex) -> Dict:
     """
     Computes total arbitrage for all coins in the given multindex dataframe.
 
